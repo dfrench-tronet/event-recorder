@@ -1,0 +1,61 @@
+# MUST match the Cloudflare application name exactly. `wrangler deploy` uses
+# this to decide WHICH worker it is deploying - a mismatch silently creates a
+# second, empty worker rather than updating the live one.
+name = "event-recorder"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Every minute. This is the recording resolution, not a polling convenience:
+# one bundle per minute IS the archive's granularity, and a replay scrubs
+# minute by minute. Slowing this down coarsens every future event replay;
+# there is no way to go back and fill in the gap.
+[triggers]
+crons = ["* * * * *"]
+
+# SHARED KV - this is the DASHBOARD's namespace, not a private one.
+#
+# The recorder reads `event-mode` (written by the dashboard's Event Mode API)
+# and writes `evbuf:*`, `evrec:health`, `event:<id>:*`. The dashboard's events
+# API writes `event:<id>:meta`, `:deleted` and `:mergedInto` into the same
+# namespace and the recorder honours all three.
+#
+# Consequences worth knowing before you touch it:
+#   - Metrics on this namespace are NOT this worker's. Most of the read volume
+#     is the dashboard. See "Reading the KV metrics" in README.md.
+#   - A bulk delete or namespace swap here affects the dashboard too.
+#   - Sealed snapshots carry a 2-YEAR TTL and live here permanently.
+#
+# id is an identifier, not a credential - safe to commit.
+#
+# preview_id deliberately omitted: `wrangler dev` on this worker would write
+# buffer keys into PRODUCTION event history. Create one before running it.
+[[kv_namespaces]]
+binding = "OUTAGE_DATA"
+id = "9a2884f5a1f34e91a754c7bd2ca19326"
+# preview_id = "REPLACE_WITH_PREVIEW_NAMESPACE_ID"
+
+# Radar frames are PNGs and must never enter KV - they go to R2, referenced
+# from the bundle by key only. If this binding is absent the worker still runs;
+# events simply have no radar imagery.
+[[r2_buckets]]
+binding = "EVENT_RADAR"
+bucket_name = "westpower-event-radar"
+
+[vars]
+# The dashboard origin the recorder captures THROUGH. No trailing slash -
+# though base() strips one defensively, because a trailing slash produces
+# "//api/..." which does not resolve, and captures fail soft, so the worker
+# would run happily and record nothing.
+PAGES_BASE_URL = "https://internal-outage-dashboard.pages.dev"
+
+# "on" enables continuous buffering of crew vehicle positions. This is a
+# DELIBERATE, DEPLOY-TIME relaxation of the live crew privacy gate - read the
+# "Crew privacy" section of README.md before changing it in either direction.
+CREW_BUFFER = "off"
+
+# SECRET, not set here:
+#   CAPTURE_TOKEN   wrangler secret put CAPTURE_TOKEN
+#
+# Must equal the Pages project's EVENT_CAPTURE_TOKEN (or its UPLOAD_TOKEN, if
+# that is still the only one set - see the dashboard's functions/_middleware.ts).
+# A mismatch makes every feed 401 while the worker reports clean runs.
