@@ -8,7 +8,7 @@ those minutes into permanent, replayable snapshots — **including the 12 hours
 before the event was declared**.
 
 > **Architecture, how this fits with the other components, and the shared
-> conventions live in the [outage-architecture repo](https://github.com/dfrench-tronet/outage-architecture).**
+> conventions live in the [Architecture section of the internal-outage-dashboard README](https://github.com/dfrench-tronet/internal-outage-dashboard/blob/main/westpower-outage-map/README.md#architecture).**
 > Read that first if you are new to the system. This file covers running and
 > deploying *this* worker only.
 
