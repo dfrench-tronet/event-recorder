@@ -51,7 +51,14 @@ PAGES_BASE_URL = "https://internal-outage-dashboard.pages.dev"
 # "on" enables continuous buffering of crew vehicle positions. This is a
 # DELIBERATE, DEPLOY-TIME relaxation of the live crew privacy gate - read the
 # "Crew privacy" section of README.md before changing it in either direction.
-CREW_BUFFER = "off"
+#
+# SET TO MATCH PRODUCTION, which has had this "on". It was committed here as
+# "off", so the first git-driven deploy would have flipped it - with no error
+# and nothing in a log. Events from that point would simply have carried no
+# crew data before their declaration, and nobody would have found out until
+# the next time somebody replayed a storm and wondered where the vehicles
+# went. A setting whose wrong value is invisible has to be correct in the file.
+CREW_BUFFER = "on"
 
 # SECRET, not set here:
 #   CAPTURE_TOKEN   wrangler secret put CAPTURE_TOKEN
