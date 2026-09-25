@@ -29,8 +29,8 @@ there to be sealed.
 
 | Step | Action |
 |---|---|
-| **1. Capture** | Fetch every feed through the dashboard's own `/api/*` proxies, write one bundle key `evbuf:<minuteTs>`, TTL 25 h. |
-| **1b. Health** | Write `evrec:health` with per-feed outcomes, TTL 25 h. |
+| **1. Capture** | Fetch every feed through the dashboard's own `/api/*` proxies, write one bundle key `evbuf:<minuteTs>`, TTL 49 h, and fold crew positions into the hour's `evtrack:<hourTs>` track document, TTL 50 h. |
+| **1b. Health** | Write `evrec:health` with per-feed outcomes, TTL 49 h. |
 | **2. Seal** | While an episode is active, copy unsealed buffered minutes to `event:<id>:snap:<ts>`, **TTL 2 years**, and update the index. |
 | **3. Radar** | While sealing, copy the latest radar PNG to R2 at `event/<id>/radar/<ts>.png`. |
 
@@ -59,7 +59,7 @@ mid-event — which is precisely the minute worth having a record of.
 ## Crew privacy
 
 `CREW_BUFFER=on` means **continuous recording of crew vehicle positions** into
-the rolling buffer. Those positions are auto-purged within ~25 h and are only
+the rolling buffer. Those positions are auto-purged within ~49 h and are only
 ever sealed — kept, exposed — inside a declared event's window.
 
 This is a deliberate, deploy-time relaxation of the live privacy gate that

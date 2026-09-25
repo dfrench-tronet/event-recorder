@@ -6,14 +6,14 @@
  *   1. CAPTURE - fetch every feed through the dashboard's own /api proxies
  *      (one base URL + one shared token; every proxy's params, transforms
  *      and caching are reused rather than re-implemented) and write ONE
- *      bundle key `evbuf:<minuteTs>` with a rolling 25 h TTL. This buffer
+ *      bundle key `evbuf:<minuteTs>` with a rolling 49 h TTL. This buffer
  *      is what makes the 12-hour lead-in possible: nothing knows an event
  *      is coming, so the recent past is always held, briefly, for all
  *      feeds.
  *
  *      CREW PRIVACY: the eroad feed is only captured when CREW_BUFFER=on.
  *      That setting means continuous recording of crew vehicle positions
- *      into the rolling buffer, auto-purged within ~25 h and only ever
+ *      into the rolling buffer, auto-purged within ~49 h and only ever
  *      sealed (kept, exposed) inside a declared event's window. It is a
  *      deliberate, deploy-time relaxation of the live privacy gate -
  *      switch it off and events simply have no crew data before their
@@ -42,10 +42,73 @@
  */
 
 const MIN = 60_000;
-const BUFFER_TTL_S = 25 * 60 * 60;
+// 49 hours, not 25: the dashboard's Historic Mode scrubs 48 hours and reads
+// this buffer for crew positions (`/api/eroad?at=`), and it says so in
+// src/lib/eventArchive.ts with the same figure. The extra hour is because a
+// KV TTL runs from write time, and a flat 48 would expire the oldest minute
+// exactly as the slider reached it. The event lead-in only ever needs 12.
+const BUFFER_TTL_S = 49 * 60 * 60;
+// The crew track store outlives the buffer by an hour so a window's first
+// hour document is still there when the buffer's first minute is.
+const TRACK_TTL_S = 50 * 60 * 60;
+const HOUR_MS = 60 * 60 * 1000;
 const EVENT_TTL_S = 2 * 365 * 24 * 60 * 60;
 const LEAD_IN_MS = 12 * 60 * 60 * 1000;
 const LEAD_OUT_MS = 60 * 60 * 1000;
+
+/**
+ * Fold one captured minute of crew positions into the hour's track document
+ * (`evtrack:<hourTs>`). MIRROR OF appendCrewSamples in the dashboard's
+ * functions/_utils/crewTracks.ts, where it is tested; the worker is a
+ * standalone file and cannot import it. Keep the two identical.
+ *
+ * A run of identical positions is stored as its first and last sample, the
+ * last one's minute advanced each tick, so a vehicle parked all night is two
+ * samples rather than five hundred.
+ */
+function appendCrewSamples(doc, minuteTs, features) {
+  const hour = Math.floor(minuteTs / HOUR_MS) * HOUR_MS;
+  const out = doc && doc.hour === hour && doc.vehicles ? doc : { hour, vehicles: {} };
+  const offset = Math.round((minuteTs - hour) / MIN);
+  const round5 = (n) => Math.round(n * 1e5) / 1e5;
+  const str = (v) => (v === null || v === undefined ? null : String(v).trim() || null);
+  const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  for (const f of features) {
+    const c = f && f.geometry && f.geometry.coordinates;
+    if (!Array.isArray(c) || typeof c[0] !== "number" || typeof c[1] !== "number") continue;
+    const p = (f.properties || {});
+    const id = str(p.id);
+    if (!id) continue;
+    const sample = [offset, round5(c[0]), round5(c[1]), num(p.speedKph), num(p.heading), str(p.status)];
+    let v = out.vehicles[id];
+    if (!v) {
+      v = out.vehicles[id] = {
+        identity: {
+          name: str(p.name), make: str(p.make), model: str(p.model), assetCode: str(p.assetCode),
+          plate: str(p.plate), vehicleType: str(p.vehicleType), weightType: str(p.weightType), assetType: str(p.assetType),
+        },
+        samples: [],
+      };
+    }
+    const same = (a, b) => a[1] === b[1] && a[2] === b[2] && a[5] === b[5];
+    const last = v.samples[v.samples.length - 1];
+    const prev = v.samples[v.samples.length - 2];
+    if (last && last[0] >= offset) continue;
+    if (last && prev && same(last, sample) && same(prev, sample)) last[0] = offset;
+    else v.samples.push(sample);
+  }
+  return out;
+}
+
+async function appendCrewTracks(env, minuteTs, eroad) {
+  const features = eroad && Array.isArray(eroad.features) ? eroad.features : [];
+  if (features.length === 0) return;
+  const hour = Math.floor(minuteTs / HOUR_MS) * HOUR_MS;
+  const key = `evtrack:${hour}`;
+  const doc = await env.OUTAGE_DATA.get(key, "json");
+  const next = appendCrewSamples(doc, minuteTs, features);
+  await env.OUTAGE_DATA.put(key, JSON.stringify(next), { expirationTtl: TRACK_TTL_S });
+}
 
 /** Feed name → dashboard proxy path. Add a feed here and it is archived. */
 const FEEDS = {
@@ -247,7 +310,7 @@ async function sealEpisode(env, ep, minuteTs, budget) {
   // Copy every buffered minute in the sealing range that isn't sealed yet.
   //
   // The range is the WIDER of the automatic lead-in/lead-out and the meta's
-  // own window (see the widening notes above), bounded by the buffer's 25 h
+  // own window (see the widening notes above), bounded by the buffer's 49 h
   // reach.
   //
   // HOW THIS LOOP MUST BEHAVE - learned the hard way:
@@ -339,7 +402,14 @@ export default {
     }));
     if (env.CREW_BUFFER === "on") {
       const eroad = await fetchJson(env, EROAD_PATH, outcomes);
-      if (eroad !== undefined) bundle.eroad = eroad;
+      if (eroad !== undefined) {
+        bundle.eroad = eroad;
+        // The compact per-hour track store the dashboard's timeline reads in
+        // one go - see functions/_utils/crewTracks.ts there. One read and one
+        // write a minute; a failure here never costs the capture.
+        try { await appendCrewTracks(env, minuteTs, eroad); }
+        catch (e) { console.warn("event-recorder: crew track append failed", e); }
+      }
     }
 
     // ---- 1b. health record ----
