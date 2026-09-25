@@ -61,6 +61,10 @@ const FEEDS = {
   // precisely the minute worth having a record of - so it is captured per
   // minute like everything else rather than treated as reference data.
   evacuationZones: "/api/evacuation-zones",
+  // FENZ's incident page for the West Coast districts, already filtered and
+  // placed by the dashboard. A fire call beside a line during a storm is
+  // part of the event's record. A few hundred bytes a minute.
+  fenzIncidents: "/api/fenz-incidents",
 };
 const EROAD_PATH = "/api/eroad";
 // The dashboard's own radar proxy. 300K is the wide range the map shows by
