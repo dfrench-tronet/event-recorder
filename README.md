@@ -46,8 +46,8 @@ showing.
 ## Feeds captured
 
 `lightning`, `weatherAlerts`, `earthquakes`, `roadEvents`, `loadings`
-(columnar), `transpowerNotices`, `outages`, `evacuationZones`,
-`fenzIncidents` — plus `eroad` only when `CREW_BUFFER=on`.
+(columnar), `transpowerNotices`, `outages`, `evacuationZones` — plus `eroad`
+only when `CREW_BUFFER=on`.
 
 **Add a path to `FEEDS` and it is archived from the next tick.** Nothing else
 needs changing.
