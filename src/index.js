@@ -404,6 +404,14 @@ export default {
       const eroad = await fetchJson(env, EROAD_PATH, outcomes);
       if (eroad !== undefined) {
         bundle.eroad = eroad;
+        // The dashboard answers a capture it does not recognise as one with
+        // the public role's view: configured:false and no vehicles. Stored
+        // as-is that is a silent, permanent, empty crew history. Say so.
+        if (eroad && eroad.configured === false) {
+          console.warn("event-recorder: the dashboard refused the crew capture (configured:false). "
+            + "On the Pages project set CREW_CAPTURE=on and make EVENT_CAPTURE_TOKEN equal this worker's CAPTURE_TOKEN.");
+          outcomes.push({ path: EROAD_PATH, ok: false, status: 200, body: "crew capture refused: configured:false (CREW_CAPTURE / EVENT_CAPTURE_TOKEN on the Pages project)" });
+        }
         // The compact per-hour track store the dashboard's timeline reads in
         // one go - see functions/_utils/crewTracks.ts there. One read and one
         // write a minute; a failure here never costs the capture.
