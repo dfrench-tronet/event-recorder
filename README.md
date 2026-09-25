@@ -3,7 +3,7 @@
 **Event Recorder Worker** — cron-only, no HTTP endpoints
 
 The recording system behind Event History. Every minute it captures every data
-feed into a rolling 25-hour buffer, and while an event is declared it seals
+feed into a rolling 49-hour buffer, and while an event is declared it seals
 those minutes into permanent, replayable snapshots — **including the 12 hours
 before the event was declared**.
 
@@ -21,7 +21,7 @@ interesting hours — the front arriving, the first faults, the load shifting �
 are already in the past and nowhere retrievable.
 
 So **the recent past is always held, briefly, for every feed**. That is the
-whole design. `evbuf:<minuteTs>` bundles roll with a 25-hour TTL and cost
+whole design. `evbuf:<minuteTs>` bundles roll with a 49-hour TTL and cost
 nothing but write volume; when an event is declared, the lead-in is already
 there to be sealed.
 
@@ -46,8 +46,18 @@ showing.
 ## Feeds captured
 
 `lightning`, `weatherAlerts`, `earthquakes`, `roadEvents`, `loadings`
-(columnar), `transpowerNotices`, `outages`, `evacuationZones` — plus `eroad`
-only when `CREW_BUFFER=on`.
+(columnar), `transpowerNotices`, `outages`, `evacuationZones`, `wcrcRivers`,
+`wcrcRainfall` — plus `eroad` only when `CREW_BUFFER=on`.
+
+## Crew track store
+
+With `CREW_BUFFER=on`, each tick also folds the crew feed into the hour's
+`evtrack:<hourTs>` document (TTL 50 h): per vehicle, its identity once and
+its samples as `[minute, lon, lat, speedKph, heading, status]`, a parked run
+kept as its first and last sample. The dashboard reads a window of these in
+one request (`/api/eroad?tracks=1&from=&to=`) for smooth crew playback and
+trails. The rule is a mirror of `appendCrewSamples` in the dashboard's
+`functions/_utils/crewTracks.ts`, where it is tested.
 
 **Add a path to `FEEDS` and it is archived from the next tick.** Nothing else
 needs changing.
@@ -101,12 +111,12 @@ worker's metrics**. Observed: ~320,000 reads/day and ~3,600 writes/day.
 The recorder's own share of the writes is predictable:
 
 ```
-1440 ticks/day × 2 writes (evbuf + health) = 2,880/day
+1440 ticks/day × 3 writes (evbuf + health + evtrack, the last only with CREW_BUFFER=on and a non-empty crew feed) = up to 4,320/day
 ```
 
 against ~3,600 observed — the remainder being sealing writes and the
 dashboard's own. **The reads are almost entirely the dashboard**: this worker
-does roughly two reads a minute when no event is active, about 2,880/day,
+does roughly three reads a minute when no event is active (event-mode state, the evtrack document, plus sealing), about 4,320/day,
 against 320,000 observed.
 
 If you are ever debugging write volume here, that split is the first thing to

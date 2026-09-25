@@ -42,11 +42,10 @@
  */
 
 const MIN = 60_000;
-// 49 hours, not 25: the dashboard's Historic Mode scrubs 48 hours and reads
-// this buffer for crew positions (`/api/eroad?at=`), and it says so in
-// src/lib/eventArchive.ts with the same figure. The extra hour is because a
-// KV TTL runs from write time, and a flat 48 would expire the oldest minute
-// exactly as the slider reached it. The event lead-in only ever needs 12.
+// 49 h, covering Historic Mode's 48 h timeline with an hour of margin - a KV
+// TTL runs from write time, so a flat 48 would expire the oldest minute just as
+// the slider reached it. Event Mode is NOT bounded by this: sealed minutes are
+// copied out under the event's own two-year TTL.
 const BUFFER_TTL_S = 49 * 60 * 60;
 // The crew track store outlives the buffer by an hour so a window's first
 // hour document is still there when the buffer's first minute is.
@@ -60,7 +59,8 @@ const LEAD_OUT_MS = 60 * 60 * 1000;
  * Fold one captured minute of crew positions into the hour's track document
  * (`evtrack:<hourTs>`). MIRROR OF appendCrewSamples in the dashboard's
  * functions/_utils/crewTracks.ts, where it is tested; the worker is a
- * standalone file and cannot import it. Keep the two identical.
+ * standalone file and cannot import it. Keep the rule identical (the tests
+ * pin the lines that matter).
  *
  * A run of identical positions is stored as its first and last sample, the
  * last one's minute advanced each tick, so a vehicle parked all night is two
@@ -124,6 +124,13 @@ const FEEDS = {
   // precisely the minute worth having a record of - so it is captured per
   // minute like everything else rather than treated as reference data.
   evacuationZones: "/api/evacuation-zones",
+  // WCRC river levels and rainfall. Captured per minute like everything else:
+  // a river's rate of rise IS the story during a flood, and a replay that
+  // showed only the final level would lose the thing worth reviewing. Public
+  // council telemetry, so no privacy switch gates it - unlike the crew feed
+  // below.
+  wcrcRivers: "/api/wcrc/rivers",
+  wcrcRainfall: "/api/wcrc/rainfall",
 };
 const EROAD_PATH = "/api/eroad";
 // The dashboard's own radar proxy. 300K is the wide range the map shows by
